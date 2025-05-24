@@ -7,98 +7,167 @@ const mongoose = require('mongoose');
 const passport = require("./config/googleAuth");
 const bodyParser = require('body-parser');
 const session = require("express-session");
-const swaggerUi = require("swagger-ui-express");
-const { swaggerSpec, uiConfig } = require("./swagger");
 
-const { PORT, MONGO_URI, JWT_SECRET, FRONT_END_URL, NODE_ENV } = process.env;
+const { PORT, MONGO_URI, JWT_SECRET, FRONT_END_URL } = process.env;
 
 const app = express();
 
-// SSL options (for HTTPS)
-const sslOptions = NODE_ENV === "production" ? {
+// SSL options
+const sslOptions = {
     key: fs.readFileSync('/etc/letsencrypt/live/api.milestono.com/privkey.pem'),
     cert: fs.readFileSync('/etc/letsencrypt/live/api.milestono.com/fullchain.pem')
-} : null;
+};
 
 // Middleware
 app.use(cors({
     origin: FRONT_END_URL,
-    methods: "GET,POST,PUT,DELETE,PATCH",
+    methods: "GET,POST,PUT,DELETE",
     credentials: true
 }));
 app.use(express.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
 app.use(session({
     secret: JWT_SECRET,
     resave: false,
-    saveUninitialized: true,
-    cookie: {
-        secure: NODE_ENV === "production",
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
+    saveUninitialized: true
 }));
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 
 // MongoDB connection
 mongoose.connect(MONGO_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-    connectTimeoutMS: 30000,  // Increase the connection timeout
-    socketTimeoutMS: 30000    // Increase the socket timeout
+    connectTimeoutMS: 30000,
+    socketTimeoutMS: 30000
 })
-.then(() => console.log('MongoDB connected'))
+.then(() => {
+    console.log('MongoDB connected');
+    https.createServer(sslOptions, app).listen(PORT, () => {
+        console.log(`Server started on https://api.milestono.com:${PORT}`);
+        console.log(`Swagger docs available at https://api.milestono.com:${PORT}/api-docs`);
+    });
+})
 .catch(err => {
     console.error(`MongoDB connection error: ${err.message}`);
-    process.exit(1);  // Exit the process with a failure
+    process.exit(1);
 });
 
-// Swagger documentation
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, uiConfig));
+// ====================== ROUTES ====================== //
 
-// Routes
-app.use('/api', require('./routes/userRoutes'));
-app.use('/auth', require('./routes/authRoutes'));
-app.use('/api', require('./routes/propertyRoutes'));
-app.use('/api', require('./routes/accountRoutes'));
-app.use('/api', require('./routes/paymentRoutes'));
-app.use('/api', require('./routes/otherRoutes'));
-app.use('/api', require('./routes/homePageRoutes'));
-app.use('/api', require('./routes/enquiryRoutes'));
-app.use('/api', require('./routes/feedbackRoutes'));
-app.use('/api', require('./routes/projectRoutes'));
-app.use('/api', require('./routes/galleryImageRoutes'));
-app.use('/api', require('./routes/bankRoutes'));
-app.use('/api', require('./routes/agentRoutes'));
-app.use('/api', require('./routes/verifiedAgentRoutes'));
-app.use('/api', require('./routes/agentDashboardRoutes'));
-app.use('/api/vendors', require('./routes/vendorRoutes'));
-app.use('/api/services', require('./routes/serviceRoutes'));
+// User Routes
+app.get('/api/users', (req, res) => {
+    res.json({ message: "Get all users" });
+});
+
+app.post('/api/users', (req, res) => {
+    res.json({ message: "Create user" });
+});
+
+// Auth Routes
+app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+app.get('/auth/google/callback', 
+    passport.authenticate('google', { failureRedirect: '/login' }),
+    (req, res) => {
+        res.redirect(FRONT_END_URL);
+    }
+);
+
+// Property Routes
+app.get('/api/properties', (req, res) => {
+    res.json({ message: "Get all properties" });
+});
+
+app.post('/api/properties', (req, res) => {
+    res.json({ message: "Create property" });
+});
+
+// Service Routes (both versions)
+app.get('/api/services', (req, res) => {
+    res.json({ message: "Get all services (v1)" });
+});
+
+app.get('/api/services/:id', (req, res) => {
+    res.json({ message: `Get service ${req.params.id} (v1)` });
+});
+
+app.get('/api/services', (req, res) => {
+    res.json({ message: "Get all services (v2)" });
+});
+
+// Vendor Routes
+app.get('/api/vendors', (req, res) => {
+    res.json({ message: "Get all vendors" });
+});
+
+app.post('/api/vendors', (req, res) => {
+    res.json({ message: "Create vendor" });
+});
+
+// Account Routes
+app.get('/api/accounts', (req, res) => {
+    res.json({ message: "Get all accounts" });
+});
+
+// Payment Routes
+app.post('/api/payments', (req, res) => {
+    res.json({ message: "Process payment" });
+});
+
+// Other Routes (placeholder)
+app.get('/api/other', (req, res) => {
+    res.json({ message: "Other endpoints" });
+});
+
+// Homepage Routes
+app.get('/api/homepage', (req, res) => {
+    res.json({ message: "Homepage data" });
+});
+
+// Enquiry Routes
+app.post('/api/enquiries', (req, res) => {
+    res.json({ message: "Submit enquiry" });
+});
+
+// Feedback Routes
+app.post('/api/feedback', (req, res) => {
+    res.json({ message: "Submit feedback" });
+});
+
+// Project Routes
+app.get('/api/projects', (req, res) => {
+    res.json({ message: "Get all projects" });
+});
+
+// Gallery Routes
+app.get('/api/gallery', (req, res) => {
+    res.json({ message: "Get gallery images" });
+});
+
+// Bank Routes
+app.get('/api/banks', (req, res) => {
+    res.json({ message: "Get bank details" });
+});
+
+// Agent Routes
+app.get('/api/agents', (req, res) => {
+    res.json({ message: "Get all agents" });
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'OK' });
+    res.status(200).json({ status: 'OK', timestamp: new Date() });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!' });
+    res.status(500).json({ 
+        error: 'Something went wrong!',
+        message: err.message
+    });
 });
-
-// Start server based on environment
-if (NODE_ENV === "production") {
-    https.createServer(sslOptions, app).listen(PORT, () => {
-        console.log(`Production server started on https://api.milestono.com:${PORT}`);
-        console.log(`Swagger docs available at https://api.milestono.com:${PORT}/api-docs`);
-    });
-} else {
-    app.listen(PORT, () => {
-        console.log(`Development server started on http://localhost:${PORT}`);
-        console.log(`Swagger docs available at http://localhost:${PORT}/api-docs`);
-    });
-}
 
 module.exports = app;
