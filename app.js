@@ -8,7 +8,7 @@ const passport = require("./config/googleAuth");
 const bodyParser = require('body-parser');
 const session = require("express-session");
 
-const { PORT, MONGO_URI, JWT_SECRET, FRONT_END_URL, NODE_ENV } = process.env;
+const { PORT, MONGO_URI, JWT_SECRET, FRONT_END_URL } = process.env;
 
 const app = express();
 
@@ -20,33 +20,26 @@ const sslOptions = {
 
 // Enhanced CORS configuration
 app.use(cors({
-    origin: NODE_ENV === "development" ? FRONT_END_URL : [
-        FRONT_END_URL,
-        'https://milestono.com',
-        'https://www.milestono.com'
-    ],
+    origin: FRONT_END_URL,
     methods: "GET,POST,PUT,DELETE,PATCH,OPTIONS",
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Preflight handling
-app.options('*', cors());
-
-// Middleware
-app.use(express.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.urlencoded({ extended: true }));
+// Enhanced body parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
+app.use(bodyParser.json({ limit: '10mb' }));
 
 // Secure session configuration
 app.use(session({
     secret: JWT_SECRET,
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: false,  // Changed to false for security
     cookie: {
-        secure: true, // HTTPS only
+        secure: true, // Required for HTTPS
         httpOnly: true,
-        sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
+        sameSite: 'none', // Important for cross-site requests
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
@@ -55,70 +48,76 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// MongoDB connection with enhanced options
+// Enhanced MongoDB connection with error handling
 mongoose.connect(MONGO_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
     connectTimeoutMS: 30000,
-    socketTimeoutMS: 30000,
-    retryWrites: true,
-    w: 'majority'
+    socketTimeoutMS: 30000
 })
 .then(() => {
-    console.log('MongoDB connected successfully');
+    console.log('MongoDB connected');
+    
+    // Handle duplicate key errors
+    mongoose.connection.on('error', err => {
+        if (err.code === 11000) {
+            console.error('Duplicate key error - check your unique indexes');
+        }
+    });
+
+    // Start HTTPS server
     https.createServer(sslOptions, app).listen(PORT, () => {
-        console.log(`HTTPS server running on port ${PORT}`);
-        console.log(`API endpoints available at https://api.milestono.com:${PORT}/api`);
+        console.log(`Server started on https://api.milestono.com:${PORT}`);
     });
 })
 .catch(err => {
-    console.error('MongoDB connection error:', err);
+    console.error(`MongoDB connection error: ${err.message}`);
     process.exit(1);
 });
 
-// ====================== ROUTES ====================== //
+// Route handlers
+app.use('/api', require('./routes/userRoutes'));
+app.use('/auth', require('./routes/authRoutes'));
+app.use('/api', require('./routes/propertyRoutes'));
+app.use('/api', require('./routes/accountRoutes'));
+app.use('/api', require('./routes/paymentRoutes'));
+app.use('/api', require('./routes/otherRoutes'));
+app.use('/api', require('./routes/homePageRoutes'));
+app.use('/api', require('./routes/enquiryRoutes'));
+app.use('/api', require('./routes/feedbackRoutes'));
+app.use('/api', require('./routes/projectRoutes'));
+app.use('/api', require('./routes/galleryImageRoutes'));
+app.use('/api', require('./routes/bankRoutes'));
+app.use('/api', require('./routes/agentRoutes'));
+app.use('/api', require('./routes/verifiedAgentRoutes'));
+app.use('/api', require('./routes/agentDashboardRoutes'));
+
+app.use('/api/vendors', require('./routes/vendorRoutes'));
+app.use('/api/services', require('./routes/serviceRoutes'));
+
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'healthy',
-        database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-        timestamp: new Date().toISOString(),
-        environment: NODE_ENV
-    });
+    res.status(200).json({ status: 'OK', dbStatus: mongoose.connection.readyState });
 });
 
-// API test endpoint
-app.get('/api/test', (req, res) => {
-    res.json({
-        message: "API is working",
-        session: req.sessionID,
-        authenticated: req.isAuthenticated() || false
-    });
-});
-
-// Add your other API routes here...
-
-// Error handling middleware
+// Enhanced error handling middleware
 app.use((err, req, res, next) => {
-    console.error(`[${new Date().toISOString()}] Error:`, err.stack);
-    res.status(err.status || 500).json({
-        error: {
-            message: err.message || 'Internal Server Error',
-            path: req.path,
-            method: req.method,
-            timestamp: new Date().toISOString()
-        }
-    });
-});
-
-// 404 handler
-app.use((req, res) => {
-    res.status(404).json({
-        error: 'Endpoint not found',
-        path: req.path,
-        method: req.method
-    });
+    console.error(err.stack);
+    
+    if (err.name === 'TokenError') {
+        return res.status(400).json({ error: 'Authentication failed' });
+    }
+    
+    if (err.code === 11000) {
+        return res.status(400).json({ 
+            error: 'Duplicate data',
+            field: Object.keys(err.keyPattern)[0],
+            value: err.keyValue[Object.keys(err.keyPattern)[0]]
+        });
+    }
+    
+    res.status(500).json({ error: 'Internal server error' });
 });
 
 module.exports = app;
